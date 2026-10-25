@@ -68,6 +68,9 @@ ul{list-style:none;margin:0;padding:0}
 .body small{display:block;font-size:11.5px;color:var(--ink3);margin-bottom:3px}
 .body p{margin:0;font-size:15px;font-weight:500;line-height:1.45;word-break:break-word;white-space:pre-wrap}
 .row.done .body p{color:var(--ink3);text-decoration:line-through;font-weight:400}
+.grip{flex:none;width:38px;height:30px;margin:-2px -8px 0 0;display:grid;place-items:center;color:var(--ink3);touch-action:none;cursor:grab}
+.row.drag{position:relative;z-index:5;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.12);border-radius:12px;transition:none}
+.row.drag .card{padding-left:8px;padding-right:8px}
 .empty{padding:34px 0;text-align:center;font-size:13.5px;color:var(--ink3);line-height:1.7}
 
 .foot{margin-top:auto;padding-top:46px;text-align:center}
@@ -192,6 +195,7 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
     plan:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14.5" rx="3"/><path d="M4 10.5h16M8.5 3.5V7M15.5 3.5V7"/></svg>',
     meal:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>',
     memo:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+    grip:  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 8h14M5 12h14M5 16h14"/></svg>',
     trash: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M18.5 7l-.8 12a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 7M9 7V4.5h6V7M10 11v6M14 11v6"/></svg>'
   };
 
@@ -301,6 +305,7 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
         '<button class="delbtn" data-act="del" aria-label="삭제">'+ICON.trash+'</button>'+
         '<div class="card">'+ico+
           '<div class="body" data-act="edit"><small>'+CAT_NAME[it.cat]+'</small><p>'+esc(it.text)+'</p></div>'+
+          (items.length > 1 ? '<span class="grip" aria-label="순서 바꾸기">'+ICON.grip+'</span>' : '')+
         '</div></li>';
     }).join('');
     openCard = null;
@@ -345,13 +350,61 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
   var sw = null;
   var list = $('list');
 
+  /* 순서 바꾸기 (오른쪽 ≡ 를 잡고 위아래로 끌기) */
+  var dr = null;
+  function startDrag(e, g){
+    closeOpen();
+    var row = g.closest('.row');
+    var rows = Array.prototype.slice.call(list.querySelectorAll('.row'));
+    var from = rows.indexOf(row);
+    if(from < 0) return;
+    var rects = rows.map(function(r){ var b = r.getBoundingClientRect(); return { top:b.top, h:b.height }; });
+    dr = { row:row, rows:rows, rects:rects, from:from, to:from, y0:e.clientY };
+    row.classList.add('drag');
+    rows.forEach(function(r){ if(r !== row) r.style.transition = 'transform .18s ease'; });
+    try{ g.setPointerCapture(e.pointerId); }catch(err){}
+    e.preventDefault();
+  }
+  function moveDrag(e){
+    var d = dr, h = d.rects[d.from].h;
+    var lastR = d.rects[d.rects.length-1];
+    var minDy = d.rects[0].top - d.rects[d.from].top;
+    var maxDy = lastR.top + lastR.h - h - d.rects[d.from].top;
+    var dy = Math.max(minDy, Math.min(maxDy, e.clientY - d.y0));
+    d.row.style.transform = 'translateY('+dy+'px)';
+    var center = d.rects[d.from].top + h/2 + dy;
+    var to = 0;
+    d.rects.forEach(function(r, i){ if(i !== d.from && r.top + r.h/2 < center) to++; });
+    d.to = to;
+    d.rows.forEach(function(r, i){
+      if(i === d.from) return;
+      var s = 0;
+      if(i < d.from && to <= i) s = h;
+      if(i > d.from && i <= to) s = -h;
+      r.style.transform = s ? 'translateY('+s+'px)' : '';
+    });
+  }
+  function endDrag(){
+    var d = dr; dr = null;
+    if(d.to !== d.from){
+      var arr = dayItems(sel);
+      var it = arr.splice(d.from, 1)[0];
+      arr.splice(d.to, 0, it);
+      save();
+    }
+    renderList();
+  }
+
   list.addEventListener('pointerdown', function(e){
+    var grip = e.target.closest('.grip');
+    if(grip){ startDrag(e, grip); return; }
     var card = e.target.closest('.card');
     if(openCard && openCard !== card) closeOpen();
     if(!card) return;
     sw = { card:card, x0:e.clientX, y0:e.clientY, base: card === openCard ? -SW : 0, moved:false, x:0 };
   });
   list.addEventListener('pointermove', function(e){
+    if(dr){ moveDrag(e); return; }
     if(!sw) return;
     var dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
     if(!sw.moved){
@@ -374,8 +427,8 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
     }
     sw = null;
   }
-  list.addEventListener('pointerup', endSwipe);
-  list.addEventListener('pointercancel', endSwipe);
+  list.addEventListener('pointerup', function(){ if(dr) endDrag(); else endSwipe(); });
+  list.addEventListener('pointercancel', function(){ if(dr){ dr = null; renderList(); } else endSwipe(); });
 
   list.addEventListener('click', function(e){
     if(swiped) return;
