@@ -59,7 +59,8 @@ ul{list-style:none;margin:0;padding:0}
 .plus{width:38px;height:38px;display:grid;place-items:center;margin-right:-8px;color:var(--ink)}
 
 .row{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
-.delbtn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:52px;height:44px;
+.acts{position:absolute;right:4px;top:50%;transform:translateY(-50%);display:flex;gap:8px}
+.delbtn,.movebtn{width:46px;height:44px;
   border:1px solid #c4c4c4;border-radius:14px;background:#fff;display:grid;place-items:center;color:var(--ink2)}
 .card{position:relative;background:#fff;display:flex;gap:14px;align-items:flex-start;padding:16px 0;
   transition:transform .22s ease;touch-action:pan-y;user-select:none;-webkit-user-select:none}
@@ -187,7 +188,7 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
   var LB = 'todo-cal-last-backup';
   var DOW = ['일','월','화','수','목','금','토'];
   var CAT_NAME = {todo:'할일', plan:'약속', meal:'식사', memo:'메모'};
-  var SW = 68; // 밀었을 때 열리는 삭제 영역 너비
+  var SW = 116; // 밀었을 때 열리는 버튼(다음날 넘기기 + 삭제) 영역 너비
 
   var ICON = {
     todo:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/></svg>',
@@ -196,6 +197,7 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
     meal:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>',
     memo:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
     grip:  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 8h14M5 12h14M5 16h14"/></svg>',
+    next:  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>',
     trash: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M18.5 7l-.8 12a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 7M9 7V4.5h6V7M10 11v6M14 11v6"/></svg>'
   };
 
@@ -302,7 +304,10 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
         ? '<button class="ico chk" data-act="toggle" aria-label="완료 표시">'+(it.done?ICON.todoDone:ICON.todo)+'</button>'
         : '<span class="ico">'+ICON[it.cat]+'</span>';
       return '<li class="row'+(it.done?' done':'')+'" data-id="'+it.id+'">'+
-        '<button class="delbtn" data-act="del" aria-label="삭제">'+ICON.trash+'</button>'+
+        '<div class="acts">'+
+          '<button class="movebtn" data-act="next" aria-label="다음 날로 넘기기">'+ICON.next+'</button>'+
+          '<button class="delbtn" data-act="del" aria-label="삭제">'+ICON.trash+'</button>'+
+        '</div>'+
         '<div class="card">'+ico+
           '<div class="body" data-act="edit"><small>'+CAT_NAME[it.cat]+'</small><p>'+esc(it.text)+'</p></div>'+
           (items.length > 1 ? '<span class="grip" aria-label="순서 바꾸기">'+ICON.grip+'</span>' : '')+
@@ -349,6 +354,27 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
 
   var sw = null;
   var list = $('list');
+
+  /* 다음 날로 넘기기 */
+  function nextKey(k){
+    var s = parseKey(k);
+    var d = new Date(s.y, s.m, s.d + 1);
+    return keyOf(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function moveNext(id){
+    var arr = dayItems(sel), idx = -1;
+    arr.forEach(function(it, i){ if(it.id === id) idx = i; });
+    if(idx < 0) return;
+    var it = arr.splice(idx, 1)[0];
+    if(!arr.length) delete data.items[sel];
+    var nk = nextKey(sel);
+    if(!data.items[nk]) data.items[nk] = [];
+    it.done = false;
+    data.items[nk].push(it);
+    save(); renderCal(); renderList();
+    var n = parseKey(nk);
+    toast((n.m+1)+'월 '+n.d+'일로 넘겼어요');
+  }
 
   /* 순서 바꾸기 (오른쪽 ≡ 를 잡고 위아래로 끌기) */
   var dr = null;
@@ -438,6 +464,7 @@ textarea.field{height:150px;resize:none;font-size:14px;line-height:1.5;color:var
     var actEl = e.target.closest('[data-act]');
     var act = actEl ? actEl.getAttribute('data-act') : '';
 
+    if(act === 'next'){ moveNext(id); return; }
     if(act === 'del'){
       data.items[sel] = dayItems(sel).filter(function(it){ return it.id !== id; });
       if(!data.items[sel].length) delete data.items[sel];
